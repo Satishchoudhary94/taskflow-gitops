@@ -1,0 +1,94 @@
+# ------------------------------------------------------------------
+# TaskFlow — Docker Compose for LOCAL DEVELOPMENT & VALIDATION ONLY.
+# The target production platform is Kubernetes (built separately).
+#
+#   docker compose up --build -d        start everything
+#   docker compose run --rm backend node dist/db/seed.js   load demo data
+#   docker compose logs -f backend      structured JSON logs
+#   docker compose down                 stop (add -v to wipe the database)
+#
+# Frontend  → http://localhost:8080
+# Backend   → http://localhost:3000   (/health /ready /metrics /api/...)
+# Postgres  → localhost:5432
+# ------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taskflow}
+      POSTGRES_USER: ${POSTGRES_USER:-taskflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - taskflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskflow} -d ${POSTGRES_DB:-taskflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot job that applies pending SQL migrations, then exits.
+  # Mirrors how a Kubernetes migration Job / Argo CD PreSync hook will work.
+  migrate:
+    build: ./backend
+    command: ["node", "dist/db/migrate.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-taskflow}
+      DATABASE_USER: ${POSTGRES_USER:-taskflow}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-taskflow}
+      DATABASE_USER: ${POSTGRES_USER:-taskflow}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-secret-change-me}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-1d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: "*"
+      ENABLE_DEBUG_ENDPOINTS: ${ENABLE_DEBUG_ENDPOINTS:-false}
+      OTEL_SERVICE_NAME: taskflow-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:8080"
+    environment:
+      # URL the BROWSER uses to call the API (not container-to-container).
+      API_URL: ${API_URL:-http://localhost:3000}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  taskflow_pgdata:

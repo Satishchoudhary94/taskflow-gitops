@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+
+metadata:
+  name: backend-egress-policy
+  namespace: taskflow
+
+spec:
+  podSelector:
+    matchLabels:
+      app: taskflow-backend
+
+  policyTypes:
+    - Egress
+
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: taskflow-postgres
+
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # DNS — required to resolve service names like taskflow-postgres
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

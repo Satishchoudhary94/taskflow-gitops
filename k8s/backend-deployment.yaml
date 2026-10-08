@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: taskflow-backend
+  namespace: taskflow
+
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: taskflow-backend
+
+  template:
+    metadata:
+      labels:
+        app: taskflow-backend
+
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: taskflow-backend
+                topologyKey: kubernetes.io/hostname
+
+      containers:
+        - name: backend
+          image: schoudhary94/taskflow-backend:v1
+
+          ports:
+            - containerPort: 3000
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          env:
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: DATABASE_HOST
+
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: DATABASE_PORT
+
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: DATABASE_NAME
+
+            - name: DATABASE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: DATABASE_USER
+
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-postgres-secret
+                  key: POSTGRES_PASSWORD
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-backend-secret
+                  key: JWT_SECRET
+
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: NODE_ENV
+
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: taskflow-backend-config
+                  key: LOG_LEVEL
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
