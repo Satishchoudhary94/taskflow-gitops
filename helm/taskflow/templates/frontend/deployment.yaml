@@ -1,0 +1,52 @@
+{{- $ctx := dict "root" . "component" "frontend" -}}
+{{- with .Values.frontend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "taskflow.fullname" $ctx }}
+  labels:
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels:
+      {{- include "taskflow.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskflow.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: {{ include "taskflow.image" (dict "root" $ "image" .image) | quote }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .containerPort }}
+          env:
+            # Read by docker-entrypoint.d/50-runtime-config.sh → /config.js
+            - name: API_URL
+              value: {{ .apiUrl | quote }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          {{- with .probes.liveness }}
+          livenessProbe:
+            httpGet:
+              path: {{ .path }}
+              port: http
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- with .probes.readiness }}
+          readinessProbe:
+            httpGet:
+              path: {{ .path }}
+              port: http
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+{{- end }}

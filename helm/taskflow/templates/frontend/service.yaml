@@ -1,0 +1,15 @@
+{{- $ctx := dict "root" . "component" "frontend" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "taskflow.fullname" $ctx }}
+  labels:
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    {{- include "taskflow.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http

@@ -1,0 +1,14 @@
+{{- $ctx := dict "root" . "component" "backend" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "taskflow.fullname" $ctx }}-config
+  labels:
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
+data:
+  {{- if .Values.postgres.enabled }}
+  DATABASE_HOST: {{ include "taskflow.fullname" (dict "root" . "component" "postgres") | quote }}
+  {{- end }}
+  {{- range $key, $value := .Values.backend.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

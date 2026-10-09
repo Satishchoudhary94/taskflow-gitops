@@ -1,62 +1,46 @@
 {{/*
-Expand the name of the chart.
+Helpers shared by every component (backend, frontend, postgres).
+
+They take a dict instead of the plain dot, so one helper can serve all components:
+  {{ include "taskflow.fullname" (dict "root" . "component" "backend") }}
+    root      = the top-level dot (.Release, .Chart, .Values)
+    component = which part of the app this resource belongs to
 */}}
-{{- define "taskflow.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
 
 {{/*
-Create a default fully qualified app name.
-We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
-If release name contains chart name it will be used as a full name.
+Resource name: <release>-<component>
+  helm install taskflow → taskflow-backend, taskflow-frontend, taskflow-postgres
+  helm install dev      → dev-backend, dev-frontend, dev-postgres
 */}}
 {{- define "taskflow.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
-{{- end }}
+{{- printf "%s-%s" .root.Release.Name .component | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 
 {{/*
-Create chart name and version as used by the chart label.
-*/}}
-{{- define "taskflow.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
-Common labels
-*/}}
-{{- define "taskflow.labels" -}}
-helm.sh/chart: {{ include "taskflow.chart" . }}
-{{ include "taskflow.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
-
-{{/*
-Selector labels
+Selector labels: small and STABLE. spec.selector is immutable; changing these
+after the first install means deleting the Deployment/StatefulSet.
+NetworkPolicies use the same labels to pick pods.
 */}}
 {{- define "taskflow.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "taskflow.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end }}
+app.kubernetes.io/name: {{ .root.Chart.Name }}
+app.kubernetes.io/instance: {{ .root.Release.Name }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
 
 {{/*
-Create the name of the service account to use
+All labels: selector labels + information that may change between releases.
 */}}
-{{- define "taskflow.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "taskflow.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
+{{- define "taskflow.labels" -}}
+{{ include "taskflow.selectorLabels" . }}
+app.kubernetes.io/part-of: taskflow
+app.kubernetes.io/managed-by: {{ .root.Release.Service }}
+helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace "+" "_" }}
+{{- end -}}
+
+{{/*
+Container image: <repository>:<tag>, tag falls back to Chart.appVersion.
+Call with: (dict "root" . "image" .Values.backend.image)
+*/}}
+{{- define "taskflow.image" -}}
+{{- printf "%s:%s" .image.repository (.image.tag | default .root.Chart.AppVersion | toString) -}}
+{{- end -}}

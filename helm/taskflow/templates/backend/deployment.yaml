@@ -1,0 +1,77 @@
+{{- $ctx := dict "root" . "component" "backend" -}}
+{{- with .Values.backend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "taskflow.fullname" $ctx }}
+  labels:
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
+spec:
+  {{- /* With an HPA, leave replicas out: otherwise every helm upgrade resets the HPA's count */}}
+  {{- if not .autoscaling.enabled }}
+  replicas: {{ .replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "taskflow.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskflow.labels" $ctx | nindent 8 }}
+      annotations:
+        # ConfigMap changes → hash changes → pod template changes → pods roll
+        checksum/config: {{ include (print $.Template.BasePath "/backend/configmap.yaml") $ | sha256sum }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "taskflow.selectorLabels" $ctx | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: {{ include "taskflow.image" (dict "root" $ "image" .image) | quote }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .containerPort }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "taskflow.fullname" $ctx }}-config
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "backend.secrets.databasePassword.name is required" .secrets.databasePassword.name }}
+                  key: {{ .secrets.databasePassword.key }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "backend.secrets.jwtSecret.name is required" .secrets.jwtSecret.name }}
+                  key: {{ .secrets.jwtSecret.key }}
+          {{- with .probes.liveness }}
+          livenessProbe:
+            httpGet:
+              path: {{ .path }}
+              port: http
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- with .probes.readiness }}
+          readinessProbe:
+            httpGet:
+              path: {{ .path }}
+              port: http
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+{{- end }}

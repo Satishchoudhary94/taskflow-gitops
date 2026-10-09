@@ -1,43 +1,39 @@
-{{- if .Values.ingress.enabled -}}
+{{- if .Values.ingress.enabled }}
+{{- $ctx := dict "root" . "component" "ingress" -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "taskflow.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
-    {{- include "taskflow.labels" . | nindent 4 }}
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- with .Values.ingress.className }}
-  ingressClassName: {{ . }}
-  {{- end }}
-  {{- if .Values.ingress.tls }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- with .Values.ingress.tls.secretName }}
   tls:
-    {{- range .Values.ingress.tls }}
     - hosts:
-        {{- range .hosts }}
-        - {{ . | quote }}
-        {{- end }}
-      secretName: {{ .secretName }}
-    {{- end }}
+        - {{ $.Values.ingress.host }}
+      secretName: {{ . }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    - host: {{ .Values.ingress.host }}
       http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            {{- with .pathType }}
-            pathType: {{ . }}
-            {{- end }}
+          - path: /api
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "taskflow.fullname" $ }}
+                name: {{ include "taskflow.fullname" (dict "root" . "component" "backend") }}
                 port:
-                  number: {{ $.Values.service.port }}
-          {{- end }}
-    {{- end }}
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "taskflow.fullname" (dict "root" . "component" "frontend") }}
+                port:
+                  name: http
 {{- end }}
