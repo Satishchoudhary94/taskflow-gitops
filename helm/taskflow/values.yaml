@@ -1,161 +1,162 @@
-# Default values for taskflow.
-# This is a YAML-formatted file.
-# Declare variables to be passed into your templates.
+# Default values for the TaskFlow chart.
+# Every key here can be overridden with -f values-<env>.yaml or --set.
+# These defaults reproduce what k8s/*.yaml deploys today.
 
-# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
-replicaCount: 1
+# ------------------------------------------------------------------
+# Backend (Node.js API)
+# ------------------------------------------------------------------
+backend:
+  # Ignored when autoscaling.enabled is true (the HPA owns the replica count then)
+  replicas: 2
 
-# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
-image:
-  repository: nginx
-  # This sets the pull policy for images.
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  image:
+    repository: schoudhary94/taskflow-backend
+    # Empty → Chart.yaml appVersion. CI sets this to the commit SHA.
+    tag: v1
+    pullPolicy: IfNotPresent
 
-# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
-imagePullSecrets: []
-# This is to override the chart name.
-nameOverride: ""
-fullnameOverride: ""
+  containerPort: 3000
 
-# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
-serviceAccount:
-  # Specifies whether a service account should be created
-  create: true
-  # Automatically mount a ServiceAccount's API credentials?
-  automount: true
-  # Annotations to add to the service account
-  annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
+  service:
+    type: ClusterIP
+    port: 3000
 
-# This is for setting Kubernetes Annotations to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
-podAnnotations: {}
-# This is for setting Kubernetes Labels to a Pod.
-# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-podLabels: {}
+  # Non-secret settings → ConfigMap → env vars.
+  # DATABASE_HOST is filled in automatically when postgres.enabled is true.
+  # Set it here only when using an external database.
+  config:
+    DATABASE_PORT: "5432"
+    DATABASE_NAME: taskflow
+    DATABASE_USER: taskflow
+    NODE_ENV: production
+    LOG_LEVEL: info
 
-podSecurityContext: {}
-  # fsGroup: 2000
+  # The chart does NOT create Secrets (real values never go into Git).
+  # They must already exist in the release namespace; only names/keys go here.
+  secrets:
+    databasePassword:
+      name: taskflow-postgres-secret
+      key: POSTGRES_PASSWORD
+    jwtSecret:
+      name: taskflow-backend-secret
+      key: JWT_SECRET
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
-service:
-  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
-  type: ClusterIP
-  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
-  port: 80
+  probes:
+    liveness:
+      path: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readiness:
+      path: /ready
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
 
-# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  networkPolicy:
+    # Restrict backend egress to Postgres + DNS (see the 2026-10-08 incident:
+    # without the DNS rule the backend cannot resolve the Postgres service name).
+    enabled: true
+
+# ------------------------------------------------------------------
+# Frontend (React SPA served by nginx-unprivileged on 8080)
+# ------------------------------------------------------------------
+frontend:
+  replicas: 2
+
+  image:
+    repository: schoudhary94/taskflow-frontend
+    tag: v1
+    pullPolicy: IfNotPresent
+
+  containerPort: 8080
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Written into /config.js at container start. Empty = same origin (/api via the Ingress).
+  apiUrl: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 512m
+      memory: 1000Mi
+
+  probes:
+    liveness:
+      path: /healthz
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readiness:
+      path: /healthz
+      initialDelaySeconds: 3
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+
+# ------------------------------------------------------------------
+# PostgreSQL (single-instance StatefulSet)
+# ------------------------------------------------------------------
+postgres:
+  # false → bring your own database and set backend.config.DATABASE_HOST
+  enabled: true
+
+  image:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+
+  port: 5432
+
+  # Existing Secret with POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+  existingSecret: taskflow-postgres-secret
+
+  persistence:
+    storageClassName: standard
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+
+  resources: {}
+
+  networkPolicy:
+    # Only backend pods may connect to Postgres on 5432
+    enabled: true
+
+# ------------------------------------------------------------------
+# Ingress (ingress-nginx): /api → backend, / → frontend
+# ------------------------------------------------------------------
 ingress:
-  enabled: false
-  className: ""
+  enabled: true
+  className: nginx
+  host: taskflow.local
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
-
-# -- Expose the service via gateway-api HTTPRoute
-# Requires Gateway API resources and suitable controller installed within the cluster
-# (see: https://gateway-api.sigs.k8s.io/guides/)
-httpRoute:
-  # HTTPRoute enabled.
-  enabled: false
-  # HTTPRoute annotations.
-  annotations: {}
-  # Which Gateways this Route is attached to.
-  parentRefs:
-  - name: gateway
-    sectionName: http
-    # namespace: default
-  # Hostnames matching HTTP header.
-  hostnames:
-  - chart-example.local
-  # List of rules and filters applied.
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /headers
-  #   filters:
-  #   - type: RequestHeaderModifier
-  #     requestHeaderModifier:
-  #       set:
-  #       - name: My-Overwrite-Header
-  #         value: this-is-the-only-value
-  #       remove:
-  #       - User-Agent
-  # - matches:
-  #   - path:
-  #       type: PathPrefix
-  #       value: /echo
-  #     headers:
-  #     - name: version
-  #       value: v2
-
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
-
-# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
-livenessProbe:
-  httpGet:
-    path: /
-    port: http
-readinessProbe:
-  httpGet:
-    path: /
-    port: http
-
-# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
-
-# Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
-
-# Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
-
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
+  # tls:
+  #   secretName: taskflow-tls
+  tls: {}

@@ -1,0 +1,58 @@
+{{- if .Values.postgres.enabled }}
+{{- $ctx := dict "root" . "component" "postgres" -}}
+{{- with .Values.postgres }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "taskflow.fullname" $ctx }}
+  labels:
+    {{- include "taskflow.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "taskflow.fullname" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "taskflow.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "taskflow.labels" $ctx | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ include "taskflow.image" (dict "root" $ "image" .image) | quote }}
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .port }}
+          envFrom:
+            # POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+            - secretRef:
+                name: {{ required "postgres.existingSecret is required" .existingSecret }}
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes:
+          {{- toYaml .persistence.accessModes | nindent 10 }}
+        {{- with .persistence.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .persistence.size }}
+{{- end }}
+{{- end }}
