@@ -22,11 +22,8 @@ after the first install means deleting the Deployment/StatefulSet.
 NetworkPolicies use the same labels to pick pods.
 */}}
 {{- define "taskflow.selectorLabels" -}}
-app.kubernetes.io/name: {{ .root.Chart.Name }}
-app.kubernetes.io/instance: {{ .root.Release.Name }}
-app.kubernetes.io/component: {{ .component }}
+app: {{ printf "%s-%s" .root.Chart.Name .component }}
 {{- end -}}
-
 {{/*
 All labels: selector labels + information that may change between releases.
 */}}
@@ -35,6 +32,19 @@ All labels: selector labels + information that may change between releases.
 app.kubernetes.io/part-of: taskflow
 app.kubernetes.io/managed-by: {{ .root.Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace "+" "_" }}
+{{- end -}}
+
+{{/*
+Backend ServiceAccount name. Vault's kubernetes auth role is bound to this name,
+so changing it means updating the Vault role too.
+Call with: (dict "root" . "component" "backend")
+*/}}
+{{- define "taskflow.backendServiceAccountName" -}}
+{{- if .root.Values.backend.serviceAccount.create -}}
+{{- .root.Values.backend.serviceAccount.name | default (include "taskflow.fullname" .) -}}
+{{- else -}}
+{{- .root.Values.backend.serviceAccount.name | default "default" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
