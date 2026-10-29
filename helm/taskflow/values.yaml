@@ -12,7 +12,7 @@ backend:
   image:
     repository: schoudhary94/taskflow-backend
     # Empty → Chart.yaml appVersion. CI sets this to the commit SHA.
-    tag: v1
+    tag: v2
     pullPolicy: IfNotPresent
 
   containerPort: 3000
@@ -153,6 +153,7 @@ postgres:
 # Ingress (ingress-nginx): /api → backend, / → frontend
 # ------------------------------------------------------------------
 ingress:
+  name: taskflow-ingress
   enabled: true
   className: nginx
   host: taskflow.local

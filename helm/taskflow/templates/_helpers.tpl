@@ -22,11 +22,8 @@ after the first install means deleting the Deployment/StatefulSet.
 NetworkPolicies use the same labels to pick pods.
 */}}
 {{- define "taskflow.selectorLabels" -}}
-app.kubernetes.io/name: {{ .root.Chart.Name }}
-app.kubernetes.io/instance: {{ .root.Release.Name }}
-app.kubernetes.io/component: {{ .component }}
+app: {{ printf "%s-%s" .root.Chart.Name .component }}
 {{- end -}}
-
 {{/*
 All labels: selector labels + information that may change between releases.
 */}}

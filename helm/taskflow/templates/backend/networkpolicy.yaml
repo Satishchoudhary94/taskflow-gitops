@@ -3,7 +3,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "taskflow.fullname" $ctx }}-egress
+  name: backend-egress-policy
   labels:
     {{- include "taskflow.labels" $ctx | nindent 4 }}
 spec:

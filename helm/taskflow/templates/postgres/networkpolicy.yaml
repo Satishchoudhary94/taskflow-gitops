@@ -6,7 +6,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "taskflow.fullname" $ctx }}-ingress
+  name: postgres-network-policy
   labels:
     {{- include "taskflow.labels" $ctx | nindent 4 }}
 spec:
