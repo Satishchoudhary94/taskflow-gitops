@@ -31,14 +31,21 @@ backend:
     NODE_ENV: production
     LOG_LEVEL: info
 
+  # Dedicated identity for the backend pods. The Vault role is bound to this name.
+  serviceAccount:
+    create: true
+    # Empty → <release>-backend
+    name: ""
+
   # The chart does NOT create Secrets (real values never go into Git).
   # They must already exist in the release namespace; only names/keys go here.
+  # With vault.enabled, point these at vault.destinationSecret to read from Vault.
   secrets:
     databasePassword:
-      name: taskflow-postgres-secret
-      key: POSTGRES_PASSWORD
+      name: taskflow-backend-secret-vault
+      key: DATABASE_PASSWORD
     jwtSecret:
-      name: taskflow-backend-secret
+      name: taskflow-backend-secret-vault
       key: JWT_SECRET
 
   resources:
@@ -77,6 +84,27 @@ backend:
     # Restrict backend egress to Postgres + DNS (see the 2026-10-08 incident:
     # without the DNS rule the backend cannot resolve the Postgres service name).
     enabled: true
+
+# ------------------------------------------------------------------
+# Vault (via the Vault Secrets Operator, installed separately)
+# ------------------------------------------------------------------
+vault:
+  # true → VSO syncs the backend secret from Vault into destinationSecret.
+  # It does not switch the backend over by itself: change backend.secrets too.
+  # Rollback: point backend.secrets back at the old Secrets FIRST, then disable.
+  enabled: true
+  # LAB: plain HTTP inside the cluster. Production: https + CA.
+  address: http://vault-active.vault.svc.cluster.local:8200
+  authMount: kubernetes
+  # Vault role bound to the backend ServiceAccount in this namespace
+  role: taskflow-backend
+  audience: vault
+  kvMount: taskflow
+  # Read as <kvMount>/data/<path>; keys: JWT_SECRET, DATABASE_PASSWORD
+  path: prod/backend
+  refreshAfter: 60s
+  # Kubernetes Secret that VSO creates and owns
+  destinationSecret: taskflow-backend-secret-vault
 
 # ------------------------------------------------------------------
 # Frontend (React SPA served by nginx-unprivileged on 8080)

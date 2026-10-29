@@ -1,0 +1,61 @@
+# HashiCorp Vault on the kind-taskflow cluster (learning lab)
+#
+# Chart:  hashicorp/vault 0.34.1  (pinned at install time with --version)
+# Vault:  2.0.4                   (matches the local vault CLI)
+# Mode:   single-node integrated Raft storage (persistent, NOT dev mode)
+#
+# Lab-only shortcuts, to be fixed in Phase 11:
+#   - TLS disabled on the listener (plain HTTP inside the cluster)
+#   - 1 Raft node (no HA, no quorum)
+#   - Manual Shamir unseal (no auto-unseal)
+
+global:
+  enabled: true
+  # LAB ONLY: plain HTTP. Production must use TLS end to end.
+  tlsDisable: true
+
+# Agent Injector off: TaskFlow will use the Vault Secrets Operator
+# (installed separately in a later step).
+injector:
+  enabled: false
+
+server:
+  image:
+    repository: hashicorp/vault
+    tag: "2.0.4"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Raft data lives on this PVC. Deleting it deletes every secret in Vault.
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    storageClass: standard
+
+  ha:
+    enabled: true
+    replicas: 1
+    raft:
+      enabled: true
+      # Raft node ID = pod name (vault-0), stable across restarts
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          tls_disable     = 1
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+        }
+
+        service_registration "kubernetes" {}

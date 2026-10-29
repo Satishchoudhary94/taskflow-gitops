@@ -35,6 +35,19 @@ helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace 
 {{- end -}}
 
 {{/*
+Backend ServiceAccount name. Vault's kubernetes auth role is bound to this name,
+so changing it means updating the Vault role too.
+Call with: (dict "root" . "component" "backend")
+*/}}
+{{- define "taskflow.backendServiceAccountName" -}}
+{{- if .root.Values.backend.serviceAccount.create -}}
+{{- .root.Values.backend.serviceAccount.name | default (include "taskflow.fullname" .) -}}
+{{- else -}}
+{{- .root.Values.backend.serviceAccount.name | default "default" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Container image: <repository>:<tag>, tag falls back to Chart.appVersion.
 Call with: (dict "root" . "image" .Values.backend.image)
 */}}

@@ -1,0 +1,101 @@
+# Phase 7 lab: VSO syncs DUMMY secrets into the taskflow-vault-lab namespace.
+# Nothing here touches the real taskflow namespace.
+#
+# Prerequisites (Phase 6):
+#   - namespace taskflow-vault-lab + ServiceAccount taskflow-backend
+#   - Vault role auth/kubernetes/role/taskflow-lab-backend
+#   - Vault policy taskflow-lab-backend-read (read taskflow/data/lab/backend)
+
+# Where Vault is
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: vault
+  namespace: taskflow-vault-lab
+spec:
+  # LAB ONLY: plain HTTP inside the cluster (TLS comes in Phase 11)
+  address: http://vault-active.vault.svc.cluster.local:8200
+---
+# How to log in: as ServiceAccount taskflow-backend, via the Phase 6 role
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: taskflow-backend
+  namespace: taskflow-vault-lab
+spec:
+  vaultConnectionRef: vault
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: taskflow-lab-backend
+    serviceAccount: taskflow-backend
+    audiences:
+      - vault
+---
+# What to read and where to put it
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: backend-secrets
+  namespace: taskflow-vault-lab
+spec:
+  vaultAuthRef: taskflow-backend
+  mount: taskflow
+  type: kv-v2
+  path: lab/backend
+  refreshAfter: 30s
+  destination:
+    name: taskflow-backend-secret-vault
+    create: true
+  # Env vars are read only at container start, so restart the app when the secret changes
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: secret-reader
+---
+# Stand-in for the backend: reads the synced Secret as env vars, like the real backend does.
+# It has no Vault token and no Vault code; it only sees a normal Kubernetes Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-reader
+  namespace: taskflow-vault-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-reader
+  template:
+    metadata:
+      labels:
+        app: secret-reader
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: reader
+          image: busybox:1.36
+          # Prints only the length of each value, never the value itself
+          command:
+            - sh
+            - -c
+            - 'echo "JWT_SECRET: ${#JWT_SECRET} chars, DATABASE_PASSWORD: ${#DATABASE_PASSWORD} chars"; sleep 3600'
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-backend-secret-vault
+                  key: JWT_SECRET
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-backend-secret-vault
+                  key: DATABASE_PASSWORD
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi

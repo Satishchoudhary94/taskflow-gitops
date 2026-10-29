@@ -1,0 +1,17 @@
+# Vault Secrets Operator (VSO) on the kind-taskflow cluster
+#
+# Chart: hashicorp/vault-secrets-operator 1.6.2 (pinned at install time with --version)
+# Namespace: vault-secrets-operator-system
+#
+# VSO logs in to Vault with an app's ServiceAccount, reads secrets, and writes
+# them into normal Kubernetes Secrets that the app already knows how to use.
+
+controller:
+  replicas: 1
+
+# No cluster-wide defaults: every app namespace declares its own
+# VaultConnection and VaultAuth, so nothing gets Vault access by accident.
+defaultVaultConnection:
+  enabled: false
+defaultAuthMethod:
+  enabled: false
